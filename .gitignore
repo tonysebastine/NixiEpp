@@ -22,7 +22,6 @@ desktop.ini
 
 # Development
 .qoder/
-test_*.php
 *_test.php
 tests/
 
