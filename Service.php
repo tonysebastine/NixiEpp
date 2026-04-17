@@ -121,14 +121,342 @@ class Service extends AdapterAbstract
 
             $result = $client->transferDomain($domainName, $authCode, $domainData);
 
+            if (!$result->isSuccess()) {
+                throw new \Exception('Transfer request failed: ' . $result->getMessage());
+            }
+
             $client->logout();
             $client->disconnect();
 
+            // Log transfer initiation
             $this->getLog()->info('Domain transfer initiated: ' . $domainName);
+            
+            // Mark transfer as pending in database
+            $this->markTransferPending($domainName, $result->getResultCode());
+            
             return true;
         } catch (\Exception $e) {
             $this->getLog()->err('Domain transfer failed: ' . $e->getMessage());
             throw new \Exception('Domain transfer failed: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * Check transfer status (manual check via button)
+     */
+    public function checkTransferStatus(\Model_Tld $tld, array $domainData): array
+    {
+        try {
+            $client = $this->getEppClient();
+            $client->connect();
+            $client->login();
+
+            $domainName = $domainData['sld'] . '.' . $tld->tld;
+            
+            // Get domain info to check transfer status
+            $domainInfo = $client->infoDomain($domainName);
+            
+            $client->logout();
+            $client->disconnect();
+
+            $this->getLog()->info('Transfer status checked for: ' . $domainName);
+            
+            return [
+                'success' => true,
+                'domain' => $domainName,
+                'status' => $domainInfo['status'] ?? [],
+                'transfer_status' => $domainInfo['transfer_status'] ?? 'none',
+                'expiry_date' => $domainInfo['expiry_date'] ?? null,
+                'registrar' => $domainInfo['registrar'] ?? null,
+                'message' => 'Transfer status retrieved successfully',
+            ];
+        } catch (\Exception $e) {
+            $this->getLog()->err('Failed to check transfer status: ' . $e->getMessage());
+            return [
+                'success' => false,
+                'domain' => $domainData['sld'] . '.' . $tld->tld,
+                'message' => 'Failed to check transfer status: ' . $e->getMessage(),
+            ];
+        }
+    }
+
+    /**
+     * Automatically check all pending transfers (daily cron job)
+     */
+    public function checkPendingTransfers(): array
+    {
+        $results = [
+            'total' => 0,
+            'completed' => 0,
+            'failed' => 0,
+            'pending' => 0,
+            'transferred_out' => 0,
+            'details' => [],
+        ];
+
+        try {
+            // Get all pending transfers from database
+            $pendingTransfers = $this->getPendingTransfers();
+            $results['total'] = count($pendingTransfers);
+
+            foreach ($pendingTransfers as $transfer) {
+                $domainName = $transfer['domain_name'];
+                $daysSinceInitiated = $transfer['days_since_initiated'];
+
+                try {
+                    // Check transfer status via EPP
+                    $status = $this->getTransferStatus($domainName);
+
+                    // Handle based on status
+                    if ($status['transfer_status'] === 'client_approved' || 
+                        $status['transfer_status'] === 'server_approved') {
+                        // Transfer completed - incoming
+                        $this->completeTransferIn($domainName, $status);
+                        $results['completed']++;
+                        $results['details'][] = [
+                            'domain' => $domainName,
+                            'action' => 'transfer_in_completed',
+                            'status' => $status['transfer_status'],
+                        ];
+
+                    } elseif ($status['transfer_status'] === 'client_rejected' || 
+                              $status['transfer_status'] === 'client_cancelled') {
+                        // Transfer rejected/cancelled
+                        $this->failTransfer($domainName, $status);
+                        $results['failed']++;
+                        $results['details'][] = [
+                            'domain' => $domainName,
+                            'action' => 'transfer_failed',
+                            'status' => $status['transfer_status'],
+                        ];
+
+                    } elseif ($status['is_transferred_out'] === true) {
+                        // Domain transferred out to another registrar
+                        $this->handleTransferOut($domainName, $status, $daysSinceInitiated);
+                        $results['transferred_out']++;
+                        $results['details'][] = [
+                            'domain' => $domainName,
+                            'action' => 'transfer_out_detected',
+                            'status' => 'transferred_out',
+                        ];
+
+                    } else {
+                        // Still pending
+                        $results['pending']++;
+                        $results['details'][] = [
+                            'domain' => $domainName,
+                            'action' => 'still_pending',
+                            'days' => $daysSinceInitiated,
+                            'status' => $status['transfer_status'] ?? 'pending',
+                        ];
+                    }
+
+                } catch (\Exception $e) {
+                    $this->getLog()->err("Failed to check transfer for {$domainName}: " . $e->getMessage());
+                    $results['failed']++;
+                    $results['details'][] = [
+                        'domain' => $domainName,
+                        'action' => 'check_failed',
+                        'error' => $e->getMessage(),
+                    ];
+                }
+            }
+
+            $this->getLog()->info("Pending transfer check completed: " . json_encode($results));
+
+        } catch (\Exception $e) {
+            $this->getLog()->err('Failed to check pending transfers: ' . $e->getMessage());
+            throw $e;
+        }
+
+        return $results;
+    }
+
+    /**
+     * Get detailed transfer status for a domain
+     */
+    private function getTransferStatus(string $domainName): array
+    {
+        $client = $this->getEppClient();
+        $client->connect();
+        $client->login();
+
+        $domainInfo = $client->infoDomain($domainName);
+
+        $client->logout();
+        $client->disconnect();
+
+        // Determine transfer status from domain info
+        $statuses = $domainInfo['status'] ?? [];
+        $transferStatus = 'none';
+        $isTransferredOut = false;
+
+        // Check for pending transfer status
+        foreach ($statuses as $status) {
+            if (stripos($status, 'pendingTransfer') !== false) {
+                $transferStatus = 'pending';
+            }
+            if (stripos($status, 'clientTransferProhibited') !== false) {
+                $transferStatus = 'locked';
+            }
+        }
+
+        // Check if domain is still with our registrar
+        $currentRegistrar = $domainInfo['registrar'] ?? '';
+        $ourRegistrarId = $this->config['username'] ?? '';
+        
+        if (!empty($currentRegistrar) && $currentRegistrar !== $ourRegistrarId) {
+            $isTransferredOut = true;
+            $transferStatus = 'transferred_out';
+        }
+
+        return [
+            'transfer_status' => $transferStatus,
+            'is_transferred_out' => $isTransferredOut,
+            'domain_info' => $domainInfo,
+            'current_registrar' => $currentRegistrar,
+        ];
+    }
+
+    /**
+     * Mark transfer as pending in database
+     */
+    private function markTransferPending(string $domainName, int $resultCode): void
+    {
+        $di = $this->getDi();
+        $sql = "INSERT INTO service_domain_transfer 
+                (domain_name, status, transfer_initiated_at, last_checked_at, result_code)
+                VALUES (:domain, 'pending', NOW(), NOW(), :code)
+                ON DUPLICATE KEY UPDATE 
+                status = 'pending',
+                transfer_initiated_at = NOW(),
+                last_checked_at = NOW(),
+                result_code = :code";
+
+        $stmt = $di['pdo']->prepare($sql);
+        $stmt->execute([
+            ':domain' => $domainName,
+            ':code' => $resultCode,
+        ]);
+
+        $this->getLog()->info("Transfer marked as pending: {$domainName}");
+    }
+
+    /**
+     * Get all pending transfers from database
+     */
+    private function getPendingTransfers(): array
+    {
+        $di = $this->getDi();
+        $sql = "SELECT 
+                    id,
+                    domain_name,
+                    status,
+                    transfer_initiated_at,
+                    last_checked_at,
+                    DATEDIFF(NOW(), transfer_initiated_at) as days_since_initiated
+                FROM service_domain_transfer
+                WHERE status IN ('pending', 'checking')
+                ORDER BY transfer_initiated_at ASC";
+
+        $stmt = $di['pdo']->prepare($sql);
+        $stmt->execute();
+
+        return $stmt->fetchAll(\PDO::FETCH_ASSOC);
+    }
+
+    /**
+     * Complete incoming transfer
+     */
+    private function completeTransferIn(string $domainName, array $status): void
+    {
+        $di = $this->getDi();
+        
+        // Update transfer record
+        $sql = "UPDATE service_domain_transfer 
+                SET status = 'completed',
+                    completed_at = NOW(),
+                    last_checked_at = NOW(),
+                    transfer_status = :transfer_status
+                WHERE domain_name = :domain";
+
+        $stmt = $di['pdo']->prepare($sql);
+        $stmt->execute([
+            ':domain' => $domainName,
+            ':transfer_status' => $status['transfer_status'],
+        ]);
+
+        // Update domain service status to active
+        $sql = "UPDATE service_domain 
+                SET status = 'active'
+                WHERE name = :domain";
+
+        $stmt = $di['pdo']->prepare($sql);
+        $stmt->execute([':domain' => $domainName]);
+
+        $this->getLog()->info("Transfer IN completed for: {$domainName}");
+    }
+
+    /**
+     * Mark transfer as failed
+     */
+    private function failTransfer(string $domainName, array $status): void
+    {
+        $di = $this->getDi();
+        
+        $sql = "UPDATE service_domain_transfer 
+                SET status = 'failed',
+                    failed_at = NOW(),
+                    last_checked_at = NOW(),
+                    failure_reason = :reason
+                WHERE domain_name = :domain";
+
+        $stmt = $di['pdo']->prepare($sql);
+        $stmt->execute([
+            ':domain' => $domainName,
+            ':reason' => 'Transfer ' . $status['transfer_status'],
+        ]);
+
+        $this->getLog()->info("Transfer failed for: {$domainName} - " . $status['transfer_status']);
+    }
+
+    /**
+     * Handle domain transferred out (delete after 7 days)
+     */
+    private function handleTransferOut(string $domainName, array $status, int $daysSinceInitiated): void
+    {
+        $di = $this->getDi();
+
+        // Check if 7 days have passed since transfer out was initiated
+        if ($daysSinceInitiated >= 7) {
+            // Delete domain from database
+            $sql = "DELETE FROM service_domain WHERE name = :domain";
+            $stmt = $di['pdo']->prepare($sql);
+            $stmt->execute([':domain' => $domainName]);
+
+            // Delete transfer record
+            $sql = "UPDATE service_domain_transfer 
+                    SET status = 'transferred_out',
+                        transferred_out_at = NOW(),
+                        last_checked_at = NOW()
+                    WHERE domain_name = :domain";
+
+            $stmt = $di['pdo']->prepare($sql);
+            $stmt->execute([':domain' => $domainName]);
+
+            $this->getLog()->warning("Domain transferred out and removed from DB: {$domainName} (after {$daysSinceInitiated} days)");
+        } else {
+            // Still within 7-day window, keep monitoring
+            $sql = "UPDATE service_domain_transfer 
+                    SET status = 'transferring_out',
+                        last_checked_at = NOW(),
+                        transfer_status = 'transferred_out'
+                    WHERE domain_name = :domain";
+
+            $stmt = $di['pdo']->prepare($sql);
+            $stmt->execute([':domain' => $domainName]);
+
+            $this->getLog()->info("Domain transferring out: {$domainName} (Day {$daysSinceInitiated}/7)");
         }
     }
 
