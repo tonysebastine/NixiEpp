@@ -1,613 +1,450 @@
-# Transfer Testing Guide - NixiEpp
+# Transfer Testing Guide
+
+Complete guide for testing domain transfer functionality in NixiEpp module.
+
+---
 
 ## 📋 Overview
 
-This guide covers testing domain transfer functionality in the NixiEpp module, including:
+This guide covers testing all aspects of domain transfers:
 
-- Transfer initiation
-- Transfer status monitoring
-- Transfer code (auth code) retrieval
-- Error handling
-- Edge cases
-
----
-
-## 🎯 Transfer Flow
-
-### Standard Transfer Process
-
-```
-Customer Request
-    ↓
-FOSSBilling UI
-    ↓
-Service.transferDomain()
-    ↓
-EppClient.transferDomain()
-    ↓
-EppFrame.createDomainTransfer()
-    ↓
-EPP Server (Registry)
-    ↓
-Response (Success/Pending/Error)
-    ↓
-FOSSBilling Database Update
-```
-
-### Transfer Timeline
-
-```
-Day 0:   Transfer initiated
-Day 1-5: Pending (waiting for losing registrar approval)
-Day 5:   Auto-approved if no response
-Day 5+:  Transfer complete, domain active
-```
+✅ Transfer initiation  
+✅ Transfer code (auth code) retrieval  
+✅ Transfer status checking  
+✅ Transfer locking/unlocking  
+✅ Error handling  
+✅ Edge cases  
 
 ---
 
-## 🧪 Testing Methods
+## 🚀 Quick Start
 
-### Method 1: Automated Test Script
+### 1. Configure Test Script
 
-**File**: `test_transfers.php`
+Edit `test_transfers.php`:
 
-#### Quick Start
-
-```bash
-# 1. Edit configuration
-vim test_transfers.php
-
-# Update these values:
+```php
+// Update these values
 $config = [
-    'epp_host' => 'epp.registry.com',
-    'epp_port' => 700,
-    'username' => 'your_registrar_id',
-    'password' => 'your_password',
+    'epp_host' => 'epp.registry.com',      // Your EPP server
+    'epp_port' => 700,                      // EPP port
+    'username' => 'your_registrar_id',      // EPP username
+    'password' => 'your_password',          // EPP password
     'ssl_cert' => '/path/to/client-cert.pem',
     'ssl_key' => '/path/to/client-key.pem',
     'ssl_ca' => '/path/to/ca-bundle.crt',
 ];
 
-# 2. Add test domains
+// Add test domains
 $testDomains = [
     [
         'domain' => 'example.in',
-        'auth_code' => 'test-auth-code-123',
+        'auth_code' => 'actual-auth-code',
     ],
 ];
+```
 
-# 3. Run in dry-run mode (safe)
+### 2. Run Tests
+
+```bash
+# Dry run (no actual EPP commands)
 php test_transfers.php --dry-run --verbose
 
-# 4. Run actual tests (when ready)
+# Live test (sends actual EPP commands)
 php test_transfers.php --verbose
 ```
-
-#### Test Script Features
-
-✅ **Connection Testing** - Verifies EPP connectivity  
-✅ **Transfer Initiation** - Tests domain transfer requests  
-✅ **Auth Code Retrieval** - Tests transfer code fetching  
-✅ **Error Handling** - Validates error responses  
-✅ **Verbose Mode** - Shows full responses  
-✅ **Dry Run Mode** - Safe testing without actual transfers  
-
----
-
-### Method 2: Manual Testing via FOSSBilling
-
-#### Step 1: Configure Module
-
-1. Log in to FOSSBilling Admin
-2. Navigate to **Settings → Domain Management → Registrars**
-3. Find **NixiEpp Registrar**
-4. Click **Configure**
-5. Verify EPP credentials
-6. Click **Test Connection**
-
-#### Step 2: Initiate Transfer
-
-1. Go to **Orders → New Order**
-2. Select **Domain Transfer**
-3. Enter domain name (e.g., `example.in`)
-4. Enter auth code from current registrar
-5. Select TLD
-6. Complete order
-
-#### Step 3: Monitor Transfer
-
-1. Navigate to **Domains → Manage Domains**
-2. Find transferred domain
-3. Check status:
-   - **Pending** - Transfer in progress
-   - **Active** - Transfer complete
-   - **Failed** - Transfer failed
-
----
-
-### Method 3: Direct EPP Testing
-
-#### Test Transfer Command
-
-```php
-<?php
-require_once 'EppClient.php';
-
-use Box\Mod\Servicedomain\Registrar\NixiEpp\EppClient;
-
-$client = new EppClient(
-    'epp.registry.com',
-    700,
-    '/path/to/client-cert.pem',
-    '/path/to/client-key.pem',
-    '/path/to/ca-bundle.crt'
-);
-
-$client->connect();
-$client->login('registrar_id', 'password');
-
-// Test transfer
-$response = $client->transferDomain('example.in', 'auth-code-123');
-
-echo "Result Code: " . $response->getResultCode() . "\n";
-echo "Message: " . $response->getMessage() . "\n";
-echo "Success: " . ($response->isSuccess() ? 'Yes' : 'No') . "\n";
-
-$client->logout();
-$client->disconnect();
-```
-
----
-
-## 📊 EPP Transfer Response Codes
-
-### Success Codes
-
-| Code | Meaning | Action |
-|------|---------|--------|
-| **1000** | Transfer complete | Domain transferred successfully |
-| **1001** | Transfer pending | Waiting for approval (normal) |
-
-### Error Codes
-
-| Code | Meaning | Solution |
-|------|---------|----------|
-| **2001** | Syntax error | Check XML format |
-| **2005** | Parameter error | Verify domain name and auth code |
-| **2201** | Authorization failed | Check EPP credentials |
-| **2303** | Domain not found | Verify domain exists |
-| **2304** | Status prohibits transfer | Remove clientTransferProhibited |
-| **2306** | Auth code invalid | Verify with losing registrar |
-| **2400** | Command failed | Check server logs |
-
----
-
-## 🔍 Transfer Status Checking
-
-### Check Transfer Status via EPP
-
-```php
-<?php
-// Get domain info to check transfer status
-$domainInfo = $client->infoDomain('example.in');
-
-echo "Status: " . implode(', ', $domainInfo['status']) . "\n";
-echo "Transfer Date: " . $domainInfo['transfer_date'] . "\n";
-echo "Expiry Date: " . $domainInfo['expiry_date'] . "\n";
-```
-
-### Common Domain Statuses
-
-| Status | Meaning | Transfer Impact |
-|--------|---------|-----------------|
-| `ok` | Normal | ✅ Transfer allowed |
-| `clientTransferProhibited` | Locked by registrar | ❌ Transfer blocked |
-| `serverTransferProhibited` | Locked by registry | ❌ Transfer blocked |
-| `pendingTransfer` | Transfer in progress | ⏳ Wait for completion |
-| `clientHold` | Suspended | ❌ Transfer blocked |
 
 ---
 
 ## 🧪 Test Scenarios
 
-### Scenario 1: Successful Transfer
+### Test 1: Basic Transfer Initiation
 
-**Setup**:
-- Domain: `test-example.in`
-- Auth Code: Valid code from current registrar
-- Status: Unlocked (no clientTransferProhibited)
+**Purpose**: Verify domain transfer can be initiated
+
+**Steps**:
+1. Get auth code from current registrar
+2. Run transfer test
+3. Verify transfer is pending
 
 **Expected Result**:
 ```
 Result Code: 1001
 Message: Command completed successfully; action pending
-Status: pendingTransfer
+✓ Transfer initiated successfully
+ℹ Transfer is pending (normal for most registries)
 ```
 
-**Verification**:
-```bash
-# Check domain info
-php -r "
-require 'EppClient.php';
-\$client = new EppClient(...);
-\$client->connect();
-\$client->login(...);
-\$info = \$client->infoDomain('test-example.in');
-print_r(\$info);
-"
+**EPP Command**:
+```xml
+<transfer op="request">
+    <domain:transfer>
+        <domain:name>example.in</domain:name>
+        <domain:period unit="y">1</domain:period>
+        <domain:authInfo>
+            <domain:pw>auth-code-here</domain:pw>
+        </domain:authInfo>
+    </domain:transfer>
+</transfer>
 ```
 
 ---
 
-### Scenario 2: Invalid Auth Code
+### Test 2: Transfer Code Retrieval
 
-**Setup**:
-- Domain: `example.in`
-- Auth Code: Wrong code
+**Purpose**: Verify auth code can be retrieved for owned domains
+
+**Steps**:
+1. Use a domain you already own
+2. Request transfer code
+3. Verify code is returned
 
 **Expected Result**:
 ```
-Result Code: 2306
-Message: Authorization error; invalid auth code
+✓ Transfer code retrieved
+Auth Code: abc*** (hidden for security)
 ```
 
-**Test**:
-```php
-try {
-    $response = $client->transferDomain('example.in', 'wrong-code');
-    if (!$response->isSuccess()) {
-        echo "Expected error: " . $response->getMessage() . "\n";
-    }
-} catch (Exception $e) {
-    echo "Exception: " . $e->getMessage() . "\n";
-}
-```
+**Note**: Some registries don't support auth code retrieval via EPP.
 
 ---
 
-### Scenario 3: Locked Domain
+### Test 3: Transfer with Invalid Auth Code
 
-**Setup**:
-- Domain: `locked-domain.in`
-- Status: `clientTransferProhibited`
+**Purpose**: Verify error handling for invalid credentials
+
+**Test Data**:
+```php
+$testDomains = [
+    [
+        'domain' => 'example.in',
+        'auth_code' => 'invalid-code',
+    ],
+];
+```
 
 **Expected Result**:
 ```
-Result Code: 2304
-Message: Object status prohibits operation
+Result Code: 2202
+Message: Authorization error
+✗ Transfer failed
 ```
 
-**Solution**:
-```php
-// Unlock domain first
-$client->unlockDomain('locked-domain.in');
+**Common Error Codes**:
+- `2202` - Invalid auth code
+- `2303` - Domain not found
+- `2201` - Authorization failed
 
-// Then transfer
-$client->transferDomain('locked-domain.in', 'auth-code');
+---
+
+### Test 4: Transfer Locked Domain
+
+**Purpose**: Verify transfer fails for locked domains
+
+**Prerequisites**:
+- Domain must have `clientTransferProhibited` status
+
+**Expected Result**:
+```
+Result Code: 2200
+Message: Transfer prohibited
+✗ Transfer failed
+```
+
+**Solution**: Unlock domain first using:
+```php
+$client->unlockDomain('example.in');
 ```
 
 ---
 
-### Scenario 4: Transfer Code Retrieval
+### Test 5: Transfer Within 60 Days
 
-**Test**:
-```php
-try {
-    $authCode = $client->getTransferCode('example.in');
-    echo "Auth Code: " . $authCode . "\n";
-} catch (Exception $e) {
-    echo "Failed: " . $e->getMessage() . "\n";
-}
+**Purpose**: Verify 60-day transfer lock is enforced
+
+**Context**: ICANN policy prohibits transfers within 60 days of:
+- New registration
+- Previous transfer
+- Registrant contact change
+
+**Expected Result**:
 ```
-
-**Expected**:
-- ✅ Success: Auth code returned
-- ⚠️ Warning: Registry doesn't support retrieval
-- ❌ Error: Domain not found or unauthorized
+Result Code: 2200
+Message: Transfer not allowed within 60 days
+✗ Transfer failed
+```
 
 ---
 
-## 📝 Transfer XML Examples
+### Test 6: Transfer Pending Approval
 
-### Transfer Request (What We Send)
+**Purpose**: Verify pending transfer status handling
 
+**After initiating transfer**:
+1. Check domain info
+2. Verify transfer status is pending
+3. Check for pending transfer ID
+
+**Expected Domain Status**:
+```
+status: pendingTransfer
+pending transfer: {transfer-id}
+```
+
+---
+
+### Test 7: Transfer Cancellation
+
+**Purpose**: Verify transfer can be cancelled
+
+**Registry Commands**:
 ```xml
-<?xml version="1.0" encoding="UTF-8"?>
-<epp xmlns="urn:ietf:params:xml:ns:epp-1.0">
-    <command>
-        <transfer op="request">
-            <domain:transfer xmlns:domain="urn:ietf:params:xml:ns:domain-1.0">
-                <domain:name>example.in</domain:name>
-                <domain:period unit="y">1</domain:period>
-                <domain:authInfo>
-                    <domain:pw>auth-code-123</domain:pw>
-                </domain:authInfo>
-            </domain:transfer>
-        </transfer>
-        <clTRID>NIXI-5f8a9b7c3d2e1.12345678</clTRID>
-    </command>
-</epp>
+<!-- Reject transfer (losing registrar) -->
+<transfer op="reject">
+    <domain:name>example.in</domain:name>
+</transfer>
+
+<!-- Cancel transfer (gaining registrar) -->
+<transfer op="cancel">
+    <domain:name>example.in</domain:name>
+</transfer>
 ```
 
-### Success Response (Pending)
-
-```xml
-<?xml version="1.0" encoding="UTF-8"?>
-<epp xmlns="urn:ietf:params:xml:ns:epp-1.0">
-    <response>
-        <result code="1001">
-            <msg>Command completed successfully; action pending</msg>
-        </result>
-        <resData>
-            <domain:trnData xmlns:domain="urn:ietf:params:xml:ns:domain-1.0">
-                <domain:name>example.in</domain:name>
-                <domain:trStatus>pending</domain:trStatus>
-                <domain:reID>NIXI-REGISTRAR</domain:reID>
-                <domain:reDate>2026-04-17T10:30:00Z</domain:reDate>
-                <domain:acID>LOSING-REGISTRAR</domain:acID>
-                <domain:acDate>2026-04-22T10:30:00Z</domain:acDate>
-                <domain:exDate>2027-04-17T10:30:00Z</domain:exDate>
-            </domain:trnData>
-        </resData>
-        <trID>
-            <clTRID>NIXI-5f8a9b7c3d2e1.12345678</clTRID>
-            <svTRID>REGISTRY-ABC123</svTRID>
-        </trID>
-    </response>
-</epp>
-```
+**Note**: Current implementation supports `request` operation only. Reject/cancel operations can be added if needed.
 
 ---
 
-## 🔧 Troubleshooting
+## 🔍 Transfer Status Codes
 
-### Issue: Transfer Fails with Code 2304
+### EPP Result Codes
 
-**Problem**: Domain status prohibits transfer
+| Code | Meaning | Action |
+|------|---------|--------|
+| 1000 | Success | Transfer completed immediately |
+| 1001 | Pending | Transfer requires approval (normal) |
+| 2200 | Transfer prohibited | Domain is locked |
+| 2201 | Authorization error | Invalid credentials |
+| 2202 | Invalid auth code | Wrong transfer code |
+| 2303 | Object not found | Domain doesn't exist |
+| 2304 | Status prohibits | Domain status blocks transfer |
 
-**Solution**:
-```php
-// 1. Check domain status
-$info = $client->infoDomain('example.in');
-print_r($info['status']);
+### Domain Status Codes
 
-// 2. If clientTransferProhibited exists, unlock
-if (in_array('clientTransferProhibited', $info['status'])) {
-    $client->unlockDomain('example.in');
-}
+| Status | Transfer Allowed | Description |
+|--------|------------------|-------------|
+| `ok` | ✅ Yes | Normal status |
+| `clientTransferProhibited` | ❌ No | Locked by registrar |
+| `serverTransferProhibited` | ❌ No | Locked by registry |
+| `pendingTransfer` | ❌ No | Transfer in progress |
+| `clientHold` | ❌ No | Suspended domain |
+| `serverHold` | ❌ No | Registry suspended |
 
-// 3. Retry transfer
-$client->transferDomain('example.in', 'auth-code');
+---
+
+## 📊 Transfer Flow
+
+### Standard Transfer Process
+
+```
+Day 0:  Transfer initiated (auth code validated)
+Day 1:  Losing registrar notified
+Day 5:  Auto-approve if no response
+Day 7:  Transfer completes (if approved)
+```
+
+### Transfer States
+
+```
+Initiated → Pending → Approved → Completed
+                ↓
+            Rejected
+                ↓
+            Cancelled
 ```
 
 ---
 
-### Issue: Transfer Fails with Code 2306
+## 🛠️ Manual Testing
 
-**Problem**: Invalid authorization code
+### Test via FOSSBilling Admin Panel
 
-**Solution**:
-1. Verify auth code with losing registrar
-2. Check for typos or special characters
-3. Request new auth code if expired
-4. Test with known working code
+1. **Navigate**: Settings → Domain Management → Registrars → NixiEpp
+2. **Test Connection**: Verify connection works
+3. **Create Order**: Create a domain transfer order
+4. **Enter Details**:
+   - Domain name
+   - Auth code
+   - Customer information
+5. **Process Order**: FOSSBilling will initiate transfer
+6. **Monitor**: Check order status and logs
 
----
-
-### Issue: Transfer Stuck in Pending
-
-**Problem**: Transfer status is `pending` for too long
-
-**Possible Causes**:
-- Losing registrar hasn't responded
-- Registry processing delay
-- Missing approval from domain owner
-
-**Solution**:
-```php
-// Check transfer status
-$info = $client->infoDomain('example.in');
-
-// Check pending transfer date
-if (isset($info['transfer_date'])) {
-    $pendingSince = new DateTime($info['transfer_date']);
-    $now = new DateTime();
-    $daysPending = $now->diff($pendingSince)->days;
-    
-    echo "Transfer pending for {$daysPending} days\n";
-    
-    if ($daysPending > 5) {
-        echo "Contact registry support\n";
-    }
-}
-```
-
----
-
-### Issue: Cannot Retrieve Auth Code
-
-**Problem**: `getTransferCode()` fails or returns empty
-
-**Possible Causes**:
-- Registry doesn't support auth code retrieval
-- Domain not managed by your registrar
-- Permission denied
-
-**Solution**:
-```php
-try {
-    $authCode = $client->getTransferCode('example.in');
-    if (empty($authCode)) {
-        echo "Registry doesn't support auth code retrieval\n";
-        echo "Customer must obtain from current registrar\n";
-    }
-} catch (Exception $e) {
-    echo "Error: " . $e->getMessage() . "\n";
-    echo "Check domain ownership and permissions\n";
-}
-```
-
----
-
-## 📈 Transfer Monitoring
-
-### Automated Status Check Script
+### Test via Direct API
 
 ```php
-<?php
-/**
- * Monitor pending transfers
- */
+// Bootstrap FOSSBilling
+require_once 'load.php';
 
-require_once 'Service.php';
+// Get registrar service
+$registrar = new \Box\Mod\Servicedomain\Registrar\NixiEpp\Service($config);
 
-// Get all pending transfers from database
-$pendingTransfers = getPendingTransfers();
-
-foreach ($pendingTransfers as $transfer) {
-    $domain = $transfer['domain'];
-    
-    try {
-        // Check status via EPP
-        $info = $client->infoDomain($domain);
-        
-        // Update database
-        if ($info['status'] === 'ok') {
-            updateTransferStatus($domain, 'completed');
-            notifyCustomer($domain, 'Transfer complete!');
-        }
-        
-    } catch (Exception $e) {
-        logError("Failed to check {$domain}: " . $e->getMessage());
-    }
-}
-```
-
-### Setup Cron Job
-
-```bash
-# Check transfers every 6 hours
-0 */6 * * * /usr/bin/php /path/to/check_transfers.php
-```
-
----
-
-## ✅ Transfer Checklist
-
-### Before Transfer
-
-- [ ] Domain is unlocked (no clientTransferProhibited)
-- [ ] Auth code obtained from current registrar
-- [ ] Domain is not expired or in redemption
-- [ ] WHOIS email is accessible (for approval)
-- [ ] Domain is older than 60 days (ICANN rule)
-- [ ] No disputes or legal issues on domain
-
-### During Transfer
-
-- [ ] Transfer initiated via EPP
-- [ ] Response code logged (1001 = pending)
-- [ ] Customer notified of pending status
-- [ ] Transfer tracked in FOSSBilling
-
-### After Transfer
-
-- [ ] Transfer status updated to "Active"
-- [ ] Domain nameservers configured
-- [ ] Customer notified of completion
-- [ ] Domain locked (clientTransferProhibited added)
-- [ ] Auto-renewal enabled
-- [ ] WHOIS privacy configured (if requested)
-
----
-
-## 🎓 Best Practices
-
-### 1. Always Validate Input
-
-```php
-// Validate domain name
-if (!preg_match('/^[a-z0-9-]+\.[a-z]{2,}$/i', $domainName)) {
-    throw new Exception('Invalid domain name format');
-}
-
-// Validate auth code
-if (empty($authCode) || strlen($authCode) < 6) {
-    throw new Exception('Invalid authorization code');
-}
-```
-
-### 2. Log Everything
-
-```php
-$this->getLog()->info('Transfer initiated', [
-    'domain' => $domainName,
-    'registrar' => 'NixiEpp',
-    'timestamp' => date('c'),
+// Initiate transfer
+$result = $registrar->transferDomain($tld, [
+    'sld' => 'example',
+    'tld' => '.in',
+    'auth_code' => 'auth-code-here',
+    'transfer_period' => 1,
 ]);
+
+echo $result ? 'Transfer initiated' : 'Transfer failed';
 ```
 
-### 3. Handle Errors Gracefully
+---
 
+## 🐛 Troubleshooting
+
+### Issue: "Authorization error" (2201)
+
+**Causes**:
+- Invalid EPP credentials
+- IP not whitelisted
+- Account suspended
+
+**Solutions**:
+1. Verify username/password
+2. Check IP whitelist with registry
+3. Contact registry support
+
+---
+
+### Issue: "Invalid auth code" (2202)
+
+**Causes**:
+- Wrong auth code
+- Auth code expired
+- Domain recently transferred
+
+**Solutions**:
+1. Get fresh auth code from current registrar
+2. Verify domain is eligible for transfer
+3. Check if 60-day lock applies
+
+---
+
+### Issue: "Transfer prohibited" (2200)
+
+**Causes**:
+- Domain locked
+- Pending transfer exists
+- Registry lock enabled
+
+**Solutions**:
 ```php
-try {
-    $result = $client->transferDomain($domain, $authCode);
-} catch (Exception $e) {
-    // Log error
-    $this->getLog()->err('Transfer failed: ' . $e->getMessage());
-    
-    // Notify customer
-    notifyCustomer($domain, 'Transfer failed. Please contact support.');
-    
-    // Don't expose technical details
-    throw new Exception('Domain transfer failed. Please verify auth code.');
-}
-```
+// Unlock domain
+$client->unlockDomain('example.in');
 
-### 4. Implement Retry Logic
-
-```php
-$maxRetries = 3;
-$retryCount = 0;
-
-while ($retryCount < $maxRetries) {
-    try {
-        $result = $client->transferDomain($domain, $authCode);
-        break; // Success
-    } catch (Exception $e) {
-        $retryCount++;
-        if ($retryCount >= $maxRetries) {
-            throw $e; // Give up
-        }
-        sleep(5); // Wait before retry
-    }
-}
+// Check status
+$info = $client->infoDomain('example.in');
+print_r($info['statuses']);
 ```
 
 ---
 
-## 📚 Related Documentation
+### Issue: Connection Timeout
 
-- [API Reference](API_REFERENCE.md) - Complete API documentation
-- [Installation Guide](INSTALL.md) - Setup instructions
-- [EPP Commands](IMPLEMENTATION_ANALYSIS.md) - Technical details
-- [Lifecycle Guide](LIFECYCLE.md) - Domain lifecycle management
+**Causes**:
+- Firewall blocking port 700
+- EPP server down
+- Network issues
 
----
-
-## 🆘 Support
-
-**Issues?** Check these resources:
-
-1. **Logs**: `/var/log/fossbilling.log`
-2. **EPP Server Logs**: Contact registry
-3. **Documentation**: See files above
-4. **GitHub Issues**: https://github.com/YOUR_USERNAME/NixiEpp/issues
-
----
-
-**Ready to test?** Run the automated test script:
-
+**Solutions**:
 ```bash
-php test_transfers.php --dry-run --verbose
+# Test connectivity
+telnet epp.registry.com 700
+
+# Test SSL
+openssl s_client -connect epp.registry.com:700 \
+  -cert client-cert.pem \
+  -key client-key.pem \
+  -CAfile ca-bundle.crt
 ```
+
+---
+
+## 📝 Test Checklist
+
+### Pre-Transfer Tests
+
+- [ ] EPP connection successful
+- [ ] Authentication working
+- [ ] Domain availability checked
+- [ ] Auth code obtained
+- [ ] Domain not locked
+- [ ] No pending transfers
+- [ ] 60-day lock not applicable
+
+### During Transfer Tests
+
+- [ ] Transfer initiated successfully
+- [ ] Status shows pending
+- [ ] Transfer ID received
+- [ ] Logs show transfer attempt
+- [ ] Customer notified
+
+### Post-Transfer Tests
+
+- [ ] Transfer completed (or pending approval)
+- [ ] Domain appears in account
+- [ ] Nameservers preserved or updated
+- [ ] Expiry date extended by 1 year
+- [ ] WHOIS updated
+
+---
+
+## 🎯 NIXI-Specific Notes
+
+### .IN Registry Transfer Rules
+
+1. **Transfer Period**: Usually 5-7 days
+2. **Auto-Renewal**: Transfer includes 1-year renewal
+3. **Auth Code**: Required and validated
+4. **60-Day Lock**: Enforced per ICANN policy
+5. **Status Check**: Use `clientTransferProhibited` for locking
+
+### Transfer Pricing
+
+- Transfer includes 1-year renewal
+- Registry charges renewal fee
+- No separate transfer fee (usually)
+
+---
+
+## 📚 Additional Resources
+
+- **EPP RFC 5731**: https://tools.ietf.org/html/rfc5731 (Domain Mapping)
+- **NIXI Policies**: https://registry.in/policies
+- **ICANN Transfer Policy**: https://www.icann.org/transfers
+- **Test Script**: `test_transfers.php`
+
+---
+
+## 🔐 Security Notes
+
+1. **Never commit auth codes** to repository
+2. **Use test domains** for testing
+3. **Rotate EPP passwords** regularly
+4. **Monitor logs** for failed attempts
+5. **Use --dry-run** for safe testing
+
+---
+
+## ✅ Testing Complete
+
+After running all tests, verify:
+
+- ✅ All expected results match
+- ✅ Error handling works correctly
+- ✅ Logs capture all operations
+- ✅ No unexpected side effects
+- ✅ Transfer flow is complete
+
+**Ready for production!** 🎉
