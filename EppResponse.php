@@ -314,6 +314,41 @@ class EppResponse
     }
 
     /**
+     * Get host (glue record) information from response
+     */
+    public function getHostInfo(): ?array
+    {
+        $info = $this->xml->xpath('//host:infData');
+        if (!isset($info[0])) {
+            return null;
+        }
+
+        $info = $info[0];
+        
+        // Parse IP addresses
+        $ipAddresses = [];
+        $addrNodes = $info->xpath('host:addresses/host:addr');
+        foreach ($addrNodes as $addr) {
+            $ipAddresses[] = [
+                'ip' => (string) $addr,
+                'version' => (string) ($addr['ip'] ?? 'v4'),
+            ];
+        }
+
+        return [
+            'name' => (string) ($info->xpath('host:name')[0] ?? ''),
+            'status' => $this->parseStatus($info->xpath('host:status') ?? []),
+            'ipAddresses' => $ipAddresses,
+            'clID' => (string) ($info->xpath('host:clID')[0] ?? ''),
+            'crID' => (string) ($info->xpath('host:crID')[0] ?? ''),
+            'crDate' => (string) ($info->xpath('host:crDate')[0] ?? ''),
+            'upID' => (string) ($info->xpath('host:upID')[0] ?? ''),
+            'upDate' => (string) ($info->xpath('host:upDate')[0] ?? ''),
+            'trDate' => (string) ($info->xpath('host:trDate')[0] ?? ''),
+        ];
+    }
+
+    /**
      * Get raw XML
      */
     public function getXml(): string

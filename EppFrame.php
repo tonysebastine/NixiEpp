@@ -164,6 +164,12 @@ class EppFrame
             $authInfo = '<domain:authInfo><domain:pw>' . htmlspecialchars($domainData['auth_code']) . '</domain:pw></domain:authInfo>';
         }
 
+        // DNSSEC extension
+        $dnssecExtension = '';
+        if (!empty($domainData['dnssec'])) {
+            $dnssecExtension = $this->createDNSSECExtension($domainData['dnssec']);
+        }
+
         $command = '<command>
     <create>
         <domain:create xmlns:domain="' . self::NS_DOMAIN . '">
@@ -176,6 +182,7 @@ class EppFrame
             ' . $authInfo . '
         </domain:create>
     </command>
+    ' . $dnssecExtension . '
     <clTRID>' . $this->clTRID . '</clTRID>
 </command>';
 
@@ -298,6 +305,242 @@ class EppFrame
             ' . ($removeXml ? '<domain:rem>' . $removeXml . '</domain:rem>' : '') . '
         </domain:update>
     </command>
+    <clTRID>' . $this->clTRID . '</clTRID>
+</command>';
+
+        $this->generateClTRID();
+        return $this->createEnvelope($command);
+    }
+
+    /**
+     * Create DNSSEC extension for domain commands
+     * 
+     * Supports both signed and unsigned delegation
+     * 
+     * @param array $dnssec DNSSEC data
+     * @return string XML extension
+     */
+    public function createDNSSECExtension(array $dnssec): string
+    {
+        $dnssecXml = '<extension>';
+        $dnssecXml .= '<secDNS:create xmlns:secDNS="' . self::NS_SEC_DNS . '">';
+
+        // Check if using dsData (signed delegation) or keyData (unsigned)
+        if (!empty($dnssec['dsData'])) {
+            // DS record (signed delegation)
+            foreach ($dnssec['dsData'] as $ds) {
+                $dnssecXml .= '<secDNS:dsData>';
+                $dnssecXml .= '<secDNS:keyTag>' . intval($ds['keyTag']) . '</sec:keyTag>';
+                $dnssecXml .= '<secDNS:alg>' . intval($ds['algorithm']) . '</secDNS:alg>';
+                $dnssecXml .= '<secDNS:digestType>' . intval($ds['digestType']) . '</secDNS:digestType>';
+                $dnssecXml .= '<secDNS:digest>' . htmlspecialchars($ds['digest']) . '</secDNS:digest>';
+                
+                // Optional maxSigLife
+                if (!empty($ds['maxSigLife'])) {
+                    $dnssecXml .= '<secDNS:maxSigLife>' . intval($ds['maxSigLife']) . '</secDNS:maxSigLife>';
+                }
+                
+                $dnssecXml .= '</secDNS:dsData>';
+            }
+        } elseif (!empty($dnssec['keyData'])) {
+            // DNSKEY record (unsigned delegation)
+            foreach ($dnssec['keyData'] as $key) {
+                $dnssecXml .= '<secDNS:keyData>';
+                $dnssecXml .= '<secDNS:flags>' . intval($key['flags']) . '</secDNS:flags>';
+                $dnssecXml .= '<secDNS:protocol>' . intval($key['protocol']) . '</secDNS:protocol>';
+                $dnssecXml .= '<secDNS:alg>' . intval($key['algorithm']) . '</secDNS:alg>';
+                $dnssecXml .= '<secDNS:pubKey>' . htmlspecialchars($key['publicKey']) . '</secDNS:pubKey>';
+                
+                $dnssecXml .= '</secDNS:keyData>';
+            }
+        }
+
+        // Optional: remove existing DNSSEC first
+        if (!empty($dnssec['remove'])) {
+            $dnssecXml = '<extension>';
+            $dnssecXml .= '<secDNS:update xmlns:secDNS="' . self::NS_SEC_DNS . '">';
+            $dnssecXml .= '<secDNS:rem>'; 
+            $dnssecXml .= '<secDNS:all>true</secDNS:all>';
+            $dnssecXml .= '</secDNS:rem>';
+            $dnssecXml .= '</secDNS:update>';
+            $dnssecXml .= '</extension>';
+            return $dnssecXml;
+        }
+
+        $dnssecXml .= '</secDNS:create>';
+        $dnssecXml .= '</extension>';
+
+        return $dnssecXml;
+    }
+
+    /**
+     * Create host (glue record) create command
+     * 
+     * Glue records are nameservers with IP addresses for in-bailiwick nameservers
+     * 
+     * @param string $hostName Host name (e.g., ns1.example.com)
+     * @param array $ipAddresses IP addresses (IPv4 and/or IPv6)
+     * @return string XML command
+     */
+    public function createHostCreate(string $hostName, array $ipAddresses = []): string
+    {
+        $addrXml = '';
+        if (!empty($ipAddresses)) {
+            foreach ($ipAddresses as $ip) {
+                // Detect IP version
+                $version = filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6) ? 'v6' : 'v4';
+                $addrXml .= '<host:addr ip="' . $version . '">' . htmlspecialchars($ip) . '</host:addr>';
+            }
+        }
+
+        $command = '<command>
+    <create>
+        <host:create xmlns:host="' . self::NS_HOST . '">
+            <host:name>' . htmlspecialchars($hostName) . '</host:name>
+            ' . $addrXml . '
+        </host:create>
+    </command>
+    <clTRID>' . $this->clTRID . '</clTRID>
+</command>';
+
+        $this->generateClTRID();
+        return $this->createEnvelope($command);
+    }
+
+    /**
+     * Create host update command (change IP addresses)
+     */
+    public function createHostUpdate(string $hostName, array $addIps = [], array $removeIps = []): string
+    {
+        $addXml = '';
+        if (!empty($addIps)) {
+            $addXml = '<host:add>';
+            foreach ($addIps as $ip) {
+                $version = filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6) ? 'v6' : 'v4';
+                $addXml .= '<host:addr ip="' . $version . '">' . htmlspecialchars($ip) . '</host:addr>';
+            }
+            $addXml .= '</host:add>';
+        }
+
+        $remXml = '';
+        if (!empty($removeIps)) {
+            $remXml = '<host:rem>';
+            foreach ($removeIps as $ip) {
+                $version = filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6) ? 'v6' : 'v4';
+                $remXml .= '<host:addr ip="' . $version . '">' . htmlspecialchars($ip) . '</host:addr>';
+            }
+            $remXml .= '</host:rem>';
+        }
+
+        $command = '<command>
+    <update>
+        <host:update xmlns:host="' . self::NS_HOST . '">
+            <host:name>' . htmlspecialchars($hostName) . '</host:name>
+            ' . $addXml . '
+            ' . $remXml . '
+        </host:update>
+    </command>
+    <clTRID>' . $this->clTRID . '</clTRID>
+</command>';
+
+        $this->generateClTRID();
+        return $this->createEnvelope($command);
+    }
+
+    /**
+     * Create host delete command
+     */
+    public function createHostDelete(string $hostName): string
+    {
+        $command = '<command>
+    <delete>
+        <host:delete xmlns:host="' . self::NS_HOST . '">
+            <host:name>' . htmlspecialchars($hostName) . '</host:name>
+        </host:delete>
+    </command>
+    <clTRID>' . $this->clTRID . '</clTRID>
+</command>';
+
+        $this->generateClTRID();
+        return $this->createEnvelope($command);
+    }
+
+    /**
+     * Create host info command
+     */
+    public function createHostInfo(string $hostName): string
+    {
+        $command = '<command>
+    <info>
+        <host:info xmlns:host="' . self::NS_HOST . '">
+            <host:name>' . htmlspecialchars($hostName) . '</host:name>
+        </host:info>
+    </command>
+    <clTRID>' . $this->clTRID . '</clTRID>
+</command>';
+
+        $this->generateClTRID();
+        return $this->createEnvelope($command);
+    }
+
+    /**
+     * Create domain update with DNSSEC add
+     */
+    public function createDomainUpdateDNSSEC(string $domainName, array $addDsData = [], array $removeDsData = [], bool $removeAll = false): string
+    {
+        $dnssecXml = '<extension>';
+        $dnssecXml .= '<secDNS:update xmlns:secDNS="' . self::NS_SEC_DNS . '">';
+
+        // Remove all existing DNSSEC
+        if ($removeAll) {
+            $dnssecXml .= '<secDNS:rem>';
+            $dnssecXml .= '<secDNS:all>true</secDNS:all>';
+            $dnssecXml .= '</secDNS:rem>';
+        }
+
+        // Remove specific DS records
+        if (!empty($removeDsData)) {
+            $dnssecXml .= '<secDNS:rem>';
+            foreach ($removeDsData as $ds) {
+                $dnssecXml .= '<secDNS:dsData>';
+                $dnssecXml .= '<secDNS:keyTag>' . intval($ds['keyTag']) . '</secDNS:keyTag>';
+                $dnssecXml .= '<secDNS:alg>' . intval($ds['algorithm']) . '</secDNS:alg>';
+                $dnssecXml .= '<secDNS:digestType>' . intval($ds['digestType']) . '</secDNS:digestType>';
+                $dnssecXml .= '<secDNS:digest>' . htmlspecialchars($ds['digest']) . '</secDNS:digest>';
+                $dnssecXml .= '</secDNS:dsData>';
+            }
+            $dnssecXml .= '</secDNS:rem>';
+        }
+
+        // Add new DS records
+        if (!empty($addDsData)) {
+            $dnssecXml .= '<secDNS:add>';
+            foreach ($addDsData as $ds) {
+                $dnssecXml .= '<secDNS:dsData>';
+                $dnssecXml .= '<secDNS:keyTag>' . intval($ds['keyTag']) . '</secDNS:keyTag>';
+                $dnssecXml .= '<secDNS:alg>' . intval($ds['algorithm']) . '</secDNS:alg>';
+                $dnssecXml .= '<secDNS:digestType>' . intval($ds['digestType']) . '</secDNS:digestType>';
+                $dnssecXml .= '<secDNS:digest>' . htmlspecialchars($ds['digest']) . '</secDNS:digest>';
+                
+                if (!empty($ds['maxSigLife'])) {
+                    $dnssecXml .= '<secDNS:maxSigLife>' . intval($ds['maxSigLife']) . '</secDNS:maxSigLife>';
+                }
+                
+                $dnssecXml .= '</secDNS:dsData>';
+            }
+            $dnssecXml .= '</secDNS:add>';
+        }
+
+        $dnssecXml .= '</secDNS:update>';
+        $dnssecXml .= '</extension>';
+
+        $command = '<command>
+    <update>
+        <domain:update xmlns:domain="' . self::NS_DOMAIN . '">
+            <domain:name>' . htmlspecialchars($domainName) . '</domain:name>
+        </domain:update>
+    </command>
+    ' . $dnssecXml . '
     <clTRID>' . $this->clTRID . '</clTRID>
 </command>';
 

@@ -280,6 +280,86 @@ class EppClient
     }
 
     /**
+     * Enable DNSSEC for domain
+     */
+    public function enableDNSSEC(string $domainName, array $dsData): EppResponse
+    {
+        $updateXml = $this->frameHandler->createDomainUpdateDNSSEC(
+            $domainName,
+            $dsData,
+            [],
+            false
+        );
+        return $this->sendCommand($updateXml);
+    }
+
+    /**
+     * Disable DNSSEC for domain (remove all)
+     */
+    public function disableDNSSEC(string $domainName): EppResponse
+    {
+        $updateXml = $this->frameHandler->createDomainUpdateDNSSEC(
+            $domainName,
+            [],
+            [],
+            true
+        );
+        return $this->sendCommand($updateXml);
+    }
+
+    /**
+     * Update DNSSEC records
+     */
+    public function updateDNSSEC(string $domainName, array $addDsData = [], array $removeDsData = []): EppResponse
+    {
+        $updateXml = $this->frameHandler->createDomainUpdateDNSSEC(
+            $domainName,
+            $addDsData,
+            $removeDsData,
+            false
+        );
+        return $this->sendCommand($updateXml);
+    }
+
+    /**
+     * Create glue record (host with IP addresses)
+     */
+    public function createGlueRecord(string $hostName, array $ipAddresses = []): EppResponse
+    {
+        $createXml = $this->frameHandler->createHostCreate($hostName, $ipAddresses);
+        return $this->sendCommand($createXml);
+    }
+
+    /**
+     * Update glue record (change IP addresses)
+     */
+    public function updateGlueRecord(string $hostName, array $addIps = [], array $removeIps = []): EppResponse
+    {
+        $updateXml = $this->frameHandler->createHostUpdate($hostName, $addIps, $removeIps);
+        return $this->sendCommand($updateXml);
+    }
+
+    /**
+     * Delete glue record
+     */
+    public function deleteGlueRecord(string $hostName): EppResponse
+    {
+        $deleteXml = $this->frameHandler->createHostDelete($hostName);
+        return $this->sendCommand($deleteXml);
+    }
+
+    /**
+     * Get glue record info
+     */
+    public function infoGlueRecord(string $hostName): array
+    {
+        $infoXml = $this->frameHandler->createHostInfo($hostName);
+        $response = $this->sendCommand($infoXml);
+        
+        return $response->getHostInfo() ?? [];
+    }
+
+    /**
      * Enable privacy protection
      */
     public function enablePrivacyProtection(string $domainName): EppResponse
