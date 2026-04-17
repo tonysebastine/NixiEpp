@@ -196,7 +196,8 @@ NixiEpp/
 │   ├── transfer_monitor.php   # Transfer monitoring cron job
 │   └── test_transfers.php     # Transfer testing script
 │
-├── 📂 config/                 ← Configuration (1 file)
+├── 📂 config/                 ← Configuration (2 files)
+│   ├── config.html.twig       # Admin configuration UI
 │   └── manifest.json.php      # Module metadata
 │
 ├── 📂 docs/                   ← Documentation (9 files)
