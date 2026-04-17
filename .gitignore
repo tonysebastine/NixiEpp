@@ -1,0 +1,47 @@
+# PHP
+*.log
+*.cache
+*.env
+.phpunit.result.cache
+composer.lock
+vendor/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.project
+.buildpath
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Development
+.qoder/
+test_*.php
+*_test.php
+tests/
+
+# Documentation (keep essential docs, remove detailed analysis)
+# COMPLETE_PROJECT_DOCS.md
+# PROJECT_SUMMARY_VISUAL.md
+# IDE_ERRORS_EXPLAINED.md
+# SUMMARY.md
+
+# Backup files
+*.bak
+*.backup
+*.old
+
+# SSL Certificates (NEVER commit these)
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+ssl/
+certificates/
