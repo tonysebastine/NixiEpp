@@ -70,6 +70,17 @@ namespace Box\Mod\Servicedomain\Registrar {
             // Implemented by FOSSBilling
             return null;
         }
+
+        /**
+         * Set dependency injection container
+         * 
+         * @param mixed $di
+         * @return void
+         */
+        public function setDi($di): void
+        {
+            // Implemented by FOSSBilling
+        }
     }
 }
 
