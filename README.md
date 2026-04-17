@@ -4,8 +4,9 @@
 [![PHP Version](https://img.shields.io/badge/PHP-8.0%2B-blue.svg)](https://php.net/)
 [![FOSSBilling](https://img.shields.io/badge/FOSSBilling-Compatible-green.svg)](https://fossbilling.org/)
 [![EPP Protocol](https://img.shields.io/badge/EPP-RFC%205730--5734-orange.svg)](https://tools.ietf.org/html/rfc5730)
+[![Version](https://img.shields.io/badge/Version-1.2.0-brightgreen.svg)](https://github.com/tonysebastine/NixiEpp/releases)
 
-**Production-ready EPP (Extensible Provisioning Protocol) registrar module for FOSSBilling with TLS encryption and automated domain lifecycle management.**
+**Production-ready EPP (Extensible Provisioning Protocol) registrar module for FOSSBilling with TLS encryption, DNSSEC support, glue records management, and automated domain lifecycle management.**
 
 ---
 
@@ -32,10 +33,38 @@
 ### Security & Performance
 - ✅ **TLS Encryption** - EPP over TLS (RFC 5734)
 - ✅ **Mutual Authentication** - Client certificate support
+- ✅ **DNSSEC** - Domain Name System Security Extensions
+- ✅ **Glue Records** - Host object management with IPv4/IPv6
 - ✅ **Batch Processing** - Prevent timeouts and memory issues
 - ✅ **Error Isolation** - One failure doesn't stop others
 - ✅ **Comprehensive Logging** - Full audit trail
 - ✅ **Input Sanitization** - XML injection prevention
+
+### Transfer Management
+- ✅ **Transfer IN** - Accept incoming domain transfers
+- ✅ **Transfer OUT** - Initiate outgoing domain transfers
+- ✅ **Auto Monitoring** - Daily automatic status checks
+- ✅ **Manual Status Check** - On-demand transfer status verification
+- ✅ **Auto Cleanup** - 7-day deletion for transferred-out domains
+
+---
+
+## ⚡ Quick Start
+
+```bash
+# 1. Clone the repository
+cd /path/to/fossbilling/src/modules/Servicedomain/Registrar
+git clone https://github.com/tonysebastine/NixiEpp.git
+
+# 2. Configure in FOSSBilling Admin Panel
+# Settings → Domain Management → Registrars → NixiEpp
+
+# 3. Set up cron jobs for automation
+crontab -e
+# Add these lines:
+# 0 2 * * * /usr/bin/php /path/to/NixiEpp/cli/lifecycle_runner.php
+# 0 3 * * * /usr/bin/php /path/to/NixiEpp/cli/transfer_monitor.php
+```
 
 ---
 
@@ -224,17 +253,35 @@ php -l src/Registrar/LifecycleService.php
 
 ## 📊 EPP Commands Supported
 
-| Command | RFC | Status | Description |
-|---------|-----|--------|-------------|
-| `<login>` | 5730 | ✅ | Authenticate |
-| `<logout>` | 5730 | ✅ | Logout |
-| `<check>` | 5731 | ✅ | Check availability |
-| `<create>` | 5731 | ✅ | Register domain |
-| `<info>` | 5731 | ✅ | Get domain info |
-| `<update>` | 5731 | ✅ | Modify domain |
-| `<renew>` | 5731 | ✅ | Renew domain |
-| `<transfer>` | 5731 | ✅ | Transfer domain |
-| `<delete>` | 5731 | ✅ | Delete domain |
+### Domain Commands (RFC 5731)
+
+| Command | Status | Description |
+|---------|--------|-------------|
+| `<login>` | ✅ | Authenticate with EPP server |
+| `<logout>` | ✅ | Logout from EPP server |
+| `<check>` | ✅ | Check domain availability |
+| `<create>` | ✅ | Register new domain |
+| `<info>` | ✅ | Get domain information |
+| `<update>` | ✅ | Modify domain (nameservers, status, etc.) |
+| `<renew>` | ✅ | Renew domain registration |
+| `<transfer>` | ✅ | Transfer domain (IN/OUT/Query) |
+| `<delete>` | ✅ | Delete domain |
+
+### DNSSEC Commands (RFC 5910)
+
+| Command | Status | Description |
+|---------|--------|-------------|
+| `<secDNS:create>` | ✅ | Add DNSSEC DS records |
+| `<secDNS:update>` | ✅ | Update/remove DNSSEC records |
+
+### Host Commands (RFC 5732)
+
+| Command | Status | Description |
+|---------|--------|-------------|
+| `<host:create>` | ✅ | Create glue record (nameserver) |
+| `<host:info>` | ✅ | Query glue record information |
+| `<host:update>` | ✅ | Update glue record IP addresses |
+| `<host:delete>` | ✅ | Delete glue record |
 
 ---
 
