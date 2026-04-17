@@ -6,7 +6,7 @@
  * Creates EPP-compliant XML requests according to RFC 5730-5734
  * 
  * @package NixiEpp
- * @version 1.0.0
+ * @version 1.2.0
  */
 
 namespace Box\Mod\Servicedomain\Registrar\NixiEpp;

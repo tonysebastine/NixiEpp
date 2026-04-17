@@ -15,7 +15,7 @@ declare(strict_types=1);
  * - Day 44: Delete domain (redemption)
  * 
  * @package NixiEpp
- * @version 1.0.0
+ * @version 1.2.0
  */
 
 namespace Box\Mod\Servicedomain\Registrar\NixiEpp;

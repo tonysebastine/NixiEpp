@@ -13,7 +13,7 @@
  * Usage: php test_transfers.php [--dry-run] [--verbose]
  * 
  * @package NixiEpp
- * @version 1.0.0
+ * @version 1.2.0
  */
 
 declare(strict_types=1);

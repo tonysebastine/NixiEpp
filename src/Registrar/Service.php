@@ -7,7 +7,7 @@
  * supporting TLS-encrypted connections for domain registration management.
  * 
  * @package NixiEpp
- * @version 1.0.0
+ * @version 1.2.0
  * @author NixiEpp
  * @license MIT
  */
@@ -44,7 +44,7 @@ class Service extends AdapterAbstract
     {
         return [
             'name' => 'NixiEpp Registrar',
-            'version' => '1.0.0',
+            'version' => '1.2.0',
             'description' => 'Production-ready EPP registrar module with TLS support for FOSSBilling',
             'author' => 'NixiEpp',
             'url' => 'https://github.com/nixiepp',

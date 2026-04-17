@@ -6,7 +6,7 @@
  * Parses and handles EPP XML responses
  * 
  * @package NixiEpp
- * @version 1.0.0
+ * @version 1.2.0
  */
 
 namespace Box\Mod\Servicedomain\Registrar\NixiEpp;

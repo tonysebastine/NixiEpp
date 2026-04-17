@@ -10,7 +10,7 @@ return [
     'id' => 'NixiEpp',
     'name' => 'NixiEpp Registrar',
     'description' => 'Production-ready EPP registrar module with TLS support for domain registration management',
-    'version' => '1.0.0',
+    'version' => '1.2.0',
     'author' => 'NixiEpp',
     'author_url' => 'https://github.com/nixiepp',
     'license' => 'MIT',

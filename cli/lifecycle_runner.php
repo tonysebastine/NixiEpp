@@ -15,7 +15,7 @@ declare(strict_types=1);
  *   0 2 * * * /usr/bin/php /path/to/lifecycle_runner.php >> /var/log/nixiepp-lifecycle.log 2>&1
  * 
  * @package NixiEpp
- * @version 1.0.0
+ * @version 1.2.0
  */
 
 // Bootstrap FOSSBilling (adjust path as needed)

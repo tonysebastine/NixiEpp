@@ -6,7 +6,7 @@
  * Production-ready EPP client implementing RFC 5734 with TLS support
  * 
  * @package NixiEpp
- * @version 1.0.0
+ * @version 1.2.0
  */
 
 namespace Box\Mod\Servicedomain\Registrar\NixiEpp;
