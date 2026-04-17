@@ -56,7 +56,7 @@
 cd /path/to/fossbilling/src/modules/Servicedomain/Registrar
 
 # 2. Clone the repository
-git clone https://github.com/YOUR_USERNAME/NixiEpp.git
+git clone https://github.com/tonysebastine/NixiEpp.git
 
 # 3. Set permissions
 chown -R www-data:www-data NixiEpp
@@ -128,8 +128,11 @@ Day 44: 🗑️  Delete → Redemption (automatic)
 # Edit crontab
 crontab -e
 
-# Add daily execution at 2 AM
-0 2 * * * /usr/bin/php /path/to/fossbilling/src/modules/Servicedomain/Registrar/NixiEpp/lifecycle_runner.php >> /var/log/nixiepp-lifecycle.log 2>&1
+# Add daily execution at 2 AM (lifecycle)
+0 2 * * * /usr/bin/php /path/to/fossbilling/src/modules/Servicedomain/Registrar/NixiEpp/cli/lifecycle_runner.php >> /var/log/nixiepp-lifecycle.log 2>&1
+
+# Add daily execution at 3 AM (transfer monitoring)
+0 3 * * * /usr/bin/php /path/to/fossbilling/src/modules/Servicedomain/Registrar/NixiEpp/cli/transfer_monitor.php >> /var/log/nixiepp-transfers.log 2>&1
 ```
 
 ### Smart Renewal Logic
@@ -151,31 +154,41 @@ During grace/recovery period (Days 1-43):
 
 ```
 NixiEpp/
-├── 📂 Core Module
-│   ├── Service.php                    # FOSSBilling adapter
-│   ├── EppClient.php                  # TLS transport layer
-│   ├── EppFrame.php                   # XML request builder
-│   ├── EppResponse.php                # XML response parser
-│   └── LifecycleService.php           # Domain lifecycle engine
 │
-├── 📂 CLI Tools
-│   └── lifecycle_runner.php           # Cron job runner
+├── 📂 src/Registrar/          ← Core Module (5 files)
+│   ├── Service.php            # FOSSBilling adapter
+│   ├── EppClient.php          # TLS transport layer
+│   ├── EppFrame.php           # XML request builder
+│   ├── EppResponse.php        # XML response parser
+│   └── LifecycleService.php   # Domain lifecycle engine
 │
-├── 📂 Configuration
-│   ├── config.html.twig               # Admin configuration UI
-│   └── manifest.json.php              # Module metadata
+├── 📂 cli/                    ← CLI Tools (3 files)
+│   ├── lifecycle_runner.php   # Lifecycle cron job
+│   ├── transfer_monitor.php   # Transfer monitoring cron job
+│   └── test_transfers.php     # Transfer testing script
 │
-├── 📂 Documentation
-│   ├── README.md                      # This file
-│   ├── INSTALL.md                     # Installation guide
-│   ├── API_REFERENCE.md               # API documentation
-│   ├── LIFECYCLE.md                   # Lifecycle management guide
-│   ├── DEPLOYMENT.md                  # Production deployment checklist
-│   └── IMPLEMENTATION_ANALYSIS.md     # Technical analysis
+├── 📂 config/                 ← Configuration (1 file)
+│   └── manifest.json.php      # Module metadata
 │
-└── 📂 Development
-    ├── .stubs.php                     # IDE type hints (dev only)
-    └── .gitignore                     # Git ignore rules
+├── 📂 docs/                   ← Documentation (9 files)
+│   ├── INSTALL.md             # Installation guide
+│   ├── LIFECYCLE.md           # Lifecycle management guide
+│   ├── LIFECYCLE_QUICK_REF.md # Quick reference
+│   ├── DEPLOYMENT.md          # Production deployment checklist
+│   ├── DNSSEC_AND_GLUE_RECORDS.md
+│   ├── TRANSFER_MONITORING.md # Transfer monitoring guide
+│   ├── TRANSFER_TESTING.md    # Transfer testing guide
+│   ├── IMPLEMENTATION_ANALYSIS.md
+│   └── IDE_SETUP.md           # IDE configuration
+│
+├── 📄 Root Files (7 files)
+│   ├── README.md              # This file
+│   ├── CHANGELOG.md           # Version history
+│   ├── CONTRIBUTING.md        # Contribution guidelines
+│   ├── LICENSE                # MIT License
+│   ├── .gitignore             # Git ignore rules
+│   ├── .stubs.php             # IDE type hints (dev only)
+│   └── database_migration_transfer_monitoring.sql
 ```
 
 ---
@@ -193,16 +206,16 @@ Settings → Domain Management → Registrars → NixiEpp → Test Connection
 
 ```bash
 # Test without executing EPP commands
-php lifecycle_runner.php --dry-run --verbose
+php cli/lifecycle_runner.php --dry-run --verbose
 ```
 
 ### Verify Setup
 
 ```bash
 # Check PHP syntax
-php -l Service.php
-php -l EppClient.php
-php -l LifecycleService.php
+php -l src/Registrar/Service.php
+php -l src/Registrar/EppClient.php
+php -l src/Registrar/LifecycleService.php
 
 # All should report: No syntax errors detected
 ```
@@ -240,11 +253,15 @@ php -l LifecycleService.php
 
 | Document | Description |
 |----------|-------------|
-| [INSTALL.md](INSTALL.md) | Step-by-step installation guide |
-| [API_REFERENCE.md](API_REFERENCE.md) | Complete API documentation |
-| [LIFECYCLE.md](LIFECYCLE.md) | Domain lifecycle management |
-| [DEPLOYMENT.md](DEPLOYMENT.md) | Production deployment checklist |
-| [IMPLEMENTATION_ANALYSIS.md](IMPLEMENTATION_ANALYSIS.md) | Technical deep dive |
+| [docs/INSTALL.md](docs/INSTALL.md) | Step-by-step installation guide |
+| [docs/LIFECYCLE.md](docs/LIFECYCLE.md) | Domain lifecycle management |
+| [docs/LIFECYCLE_QUICK_REF.md](docs/LIFECYCLE_QUICK_REF.md) | Quick reference guide |
+| [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) | Production deployment checklist |
+| [docs/DNSSEC_AND_GLUE_RECORDS.md](docs/DNSSEC_AND_GLUE_RECORDS.md) | DNSSEC & glue records guide |
+| [docs/TRANSFER_MONITORING.md](docs/TRANSFER_MONITORING.md) | Transfer monitoring guide |
+| [docs/TRANSFER_TESTING.md](docs/TRANSFER_TESTING.md) | Transfer testing guide |
+| [docs/IMPLEMENTATION_ANALYSIS.md](docs/IMPLEMENTATION_ANALYSIS.md) | Technical deep dive |
+| [docs/IDE_SETUP.md](docs/IDE_SETUP.md) | IDE configuration guide |
 
 ---
 
@@ -300,7 +317,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ## 🆘 Support
 
 - **Documentation**: See documentation files above
-- **Issues**: [GitHub Issues](https://github.com/YOUR_USERNAME/NixiEpp/issues)
+- **Issues**: [GitHub Issues](https://github.com/tonysebastine/NixiEpp/issues)
 - **Email**: support@example.com
 - **FOSSBilling Forum**: https://forum.fossbilling.org/
 
@@ -315,6 +332,18 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ---
 
 ## 📈 Version History
+
+### v1.2.0 (April 17, 2026)
+
+**Latest Release - DNSSEC, Glue Records & Transfer Monitoring**
+
+- ✅ DNSSEC support (enable/disable/update DS records)
+- ✅ Glue records management (create/update/delete hosts)
+- ✅ Automated transfer monitoring (daily checks)
+- ✅ Manual transfer status checking
+- ✅ 7-day auto-deletion for transferred-out domains
+- ✅ Organized folder structure
+- ✅ Comprehensive documentation
 
 ### v1.0.0 (April 17, 2026)
 
